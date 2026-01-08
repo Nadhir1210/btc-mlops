@@ -19,6 +19,22 @@ services:
     networks:
       - btc-network
 
+  # Streamlit Dashboard
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: btc-streamlit-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://btc-api:8000
+    depends_on:
+      - btc-api
+    restart: unless-stopped
+    networks:
+      - btc-network
+
   # MLflow UI (optional)
   mlflow:
     image: python:3.11-slim

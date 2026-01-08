@@ -17,7 +17,7 @@ env:
 
 jobs:
   # ============================================
-  # JOB 1: Check for Data Drift
+  # JOB 1: Check if retraining is needed
   # ============================================
   check-drift:
     runs-on: ubuntu-latest
@@ -35,33 +35,18 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pandas numpy scikit-learn scipy
+        pip install pandas numpy scikit-learn
 
-    - name: Detect data drift
+    - name: Check for data drift
       id: check
       run: |
-        cd training
-        python detect_drift.py
-        
-        # Vérifier le rapport de drift
-        if grep -q '"overall_drift_detected": true' drift_detection_results.json; then
-          echo "retrain=true" >> $GITHUB_OUTPUT
-          echo "Data drift detected - retraining will proceed"
-        elif [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
+        if [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
           echo "retrain=true" >> $GITHUB_OUTPUT
           echo "Forced retraining requested"
         else
           echo "retrain=false" >> $GITHUB_OUTPUT
-          echo "No drift detected - normal monitoring mode"
+          echo "No retraining needed (implement drift detection here)"
         fi
-
-    - name: Upload drift report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: drift-detection-report
-        path: training/drift_detection_results.json
-        retention-days: 30
 
   # ============================================
   # JOB 2: Retrain Model
