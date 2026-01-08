@@ -1,0 +1,60 @@
+name: Deploy to Azure Container Registry
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AZURE_RESOURCE_GROUP: btc-mlops-rg
+  ACR_NAME: btcmlopsacr
+  IMAGE_NAME: btc-prediction-api
+  CONTAINER_APP_NAME: btc-prediction-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ env.ACR_NAME }}.azurecr.io
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and push Docker image
+      run: |
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest .
+        docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+
+    - name: Deploy to Azure Container Instances
+      uses: azure/aci-deploy@v1
+      with:
+        resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
+        dns-name-label: ${{ env.CONTAINER_APP_NAME }}
+        image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        registry-login-server: ${{ env.ACR_NAME }}.azurecr.io
+        registry-username: ${{ secrets.ACR_USERNAME }}
+        registry-password: ${{ secrets.ACR_PASSWORD }}
+        name: ${{ env.CONTAINER_APP_NAME }}
+        location: westeurope
+        ports: 8000
+        cpu: 1
+        memory: 2
+
+    - name: Get deployment URL
+      run: |
+        FQDN=$(az container show --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --name ${{ env.CONTAINER_APP_NAME }} --query ipAddress.fqdn --output tsv)
+        echo "API deployed at: http://$FQDN:8000"
+        echo "Swagger UI: http://$FQDN:8000/docs"

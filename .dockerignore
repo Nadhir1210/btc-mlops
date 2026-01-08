@@ -1,0 +1,49 @@
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Ignore virtual environments
+venv/
+env/
+.env
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore data files (too large)
+data/*.csv
+
+# Ignore notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore test files
+tests/
+*_test.py
+test_*.py
+
+# Ignore documentation
+docs/
+*.md
+!README.md
+
+# Ignore other model files (we only need catboost_best.pkl)
+training/lightgbm_best.pkl
+training/xgboost_best.pkl
+
+# Ignore temp files
+*.tmp
+*.temp

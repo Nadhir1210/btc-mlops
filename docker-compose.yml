@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # BTC Prediction API
+  btc-api:
+    image: btc-prediction-api:latest
+    container_name: btc-prediction-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - btc-network
+
+  # MLflow UI (optional)
+  mlflow:
+    image: python:3.11-slim
+    container_name: btc-mlflow-ui
+    working_dir: /app
+    volumes:
+      - ./training:/app/training:ro
+    ports:
+      - "5000:5000"
+    command: >
+      bash -c "pip install mlflow && cd /app/training && mlflow ui --host 0.0.0.0 --port 5000"
+    networks:
+      - btc-network
+
+networks:
+  btc-network:
+    driver: bridge

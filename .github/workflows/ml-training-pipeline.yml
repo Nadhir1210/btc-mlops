@@ -1,0 +1,119 @@
+name: ML Model Training Pipeline
+
+on:
+  schedule:
+    # Run every Sunday at 2:00 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force model retraining'
+        required: false
+        default: 'false'
+
+env:
+  AZURE_RESOURCE_GROUP: btc-mlops-prod
+  ACR_NAME: btcnadhir2026
+
+jobs:
+  # ============================================
+  # JOB 1: Check if retraining is needed
+  # ============================================
+  check-drift:
+    runs-on: ubuntu-latest
+    outputs:
+      should_retrain: ${{ steps.check.outputs.retrain }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install pandas numpy scikit-learn
+
+    - name: Check for data drift
+      id: check
+      run: |
+        if [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
+          echo "retrain=true" >> $GITHUB_OUTPUT
+          echo "Forced retraining requested"
+        else
+          echo "retrain=false" >> $GITHUB_OUTPUT
+          echo "No retraining needed (implement drift detection here)"
+        fi
+
+  # ============================================
+  # JOB 2: Retrain Model
+  # ============================================
+  retrain:
+    runs-on: ubuntu-latest
+    needs: check-drift
+    if: needs.check-drift.outputs.should_retrain == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install pandas numpy scikit-learn catboost mlflow
+
+    - name: Train model
+      run: |
+        cd training
+        python train_bayesian_optimization.py
+      continue-on-error: true
+
+    - name: Upload model artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: trained-model
+        path: training/*.pkl
+        retention-days: 30
+
+  # ============================================
+  # JOB 3: Evaluate and Deploy
+  # ============================================
+  evaluate-and-deploy:
+    runs-on: ubuntu-latest
+    needs: retrain
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download model artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: trained-model
+        path: training/
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and push new image
+      run: |
+        az acr login --name ${{ env.ACR_NAME }}
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/btc-prediction-api:${{ github.sha }} .
+        docker push ${{ env.ACR_NAME }}.azurecr.io/btc-prediction-api:${{ github.sha }}
+
+    - name: Deploy updated model
+      run: |
+        az containerapp update \
+          --name btc-prediction-api \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --image ${{ env.ACR_NAME }}.azurecr.io/btc-prediction-api:${{ github.sha }}
+        echo "Model updated and deployed!"
