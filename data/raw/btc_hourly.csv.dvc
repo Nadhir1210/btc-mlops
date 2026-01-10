@@ -1,0 +1,5 @@
+outs:
+- md5: 89fe07755871328f6390ee5c92a991bf
+  size: 34907043
+  hash: md5
+  path: btc_hourly.csv
