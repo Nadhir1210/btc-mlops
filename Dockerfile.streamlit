@@ -1,16 +1,32 @@
 FROM python:3.11-slim
 
+# Définir le répertoire de travail
 WORKDIR /app
 
-# Copier les requirements
+# Installer les dépendances système
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copier requirements
 COPY app/requirements.txt .
+
+# Installer les packages Python
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copier l'application
-COPY app/ .
+COPY app/streamlit_app.py .
 
-# Exposer le port Streamlit
+
+# Configuration Streamlit
+RUN mkdir -p ~/.streamlit && \
+    echo "[server]" > ~/.streamlit/config.toml && \
+    echo "headless = true" >> ~/.streamlit/config.toml && \
+    echo "port = 8501" >> ~/.streamlit/config.toml && \
+    echo "enableXsrfProtection = false" >> ~/.streamlit/config.toml
+
+# Exposer le port
 EXPOSE 8501
 
 # Lancer Streamlit
-ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--client.showErrorDetails=true", "--logger.level=info"]

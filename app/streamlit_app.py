@@ -7,10 +7,20 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
-from scipy import stats
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+try:
+    from scipy import stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
 
 # Configuration de la page
 st.set_page_config(
@@ -71,43 +81,99 @@ with tab1:
                 high_price = st.number_input("High", value=42500.0, step=100.0)
                 low_price = st.number_input("Low", value=41800.0, step=100.0)
                 close_price = st.number_input("Close", value=42300.0, step=100.0)
+                volume_btc = st.number_input("Volume BTC", value=100.0, step=10.0)
+                volume_usd = st.number_input("Volume USD", value=4200000.0, step=100000.0)
             
             with col_b:
-                volume = st.number_input("Volume", value=1500.0, step=100.0)
-                rsi_14 = st.number_input("RSI (14)", value=55.0, min_value=0.0, max_value=100.0)
-                macd = st.number_input("MACD", value=150.0, step=10.0)
-                macd_signal = st.number_input("MACD Signal", value=120.0, step=10.0)
+                returns_1h = st.number_input("Returns 1h (%)", value=0.5, step=0.1)
+                returns_2h = st.number_input("Returns 2h (%)", value=1.0, step=0.1)
+                returns_4h = st.number_input("Returns 4h (%)", value=2.0, step=0.1)
+                returns_8h = st.number_input("Returns 8h (%)", value=3.0, step=0.1)
+                returns_24h = st.number_input("Returns 24h (%)", value=5.0, step=0.5)
+                volatility_4h = st.number_input("Volatility 4h", value=0.02, step=0.01)
             
             with col_c:
+                volatility_8h = st.number_input("Volatility 8h", value=0.03, step=0.01)
+                volatility_24h = st.number_input("Volatility 24h", value=0.04, step=0.01)
+                ma_5 = st.number_input("MA 5", value=42000.0, step=100.0)
+                ma_10 = st.number_input("MA 10", value=41800.0, step=100.0)
+                ma_20 = st.number_input("MA 20", value=41600.0, step=100.0)
+                ma_50 = st.number_input("MA 50", value=41400.0, step=100.0)
+            
+            col_d, col_e, col_f = st.columns(3)
+            with col_d:
+                ema_5 = st.number_input("EMA 5", value=42100.0, step=100.0)
+                ema_10 = st.number_input("EMA 10", value=41900.0, step=100.0)
+                ema_20 = st.number_input("EMA 20", value=41700.0, step=100.0)
+                momentum_5 = st.number_input("Momentum 5", value=500.0, step=50.0)
+                momentum_10 = st.number_input("Momentum 10", value=800.0, step=50.0)
+            
+            with col_e:
+                momentum_20 = st.number_input("Momentum 20", value=1200.0, step=50.0)
+                roc_5 = st.number_input("ROC 5", value=1.2, step=0.1)
+                roc_10 = st.number_input("ROC 10", value=1.9, step=0.1)
+                rsi = st.number_input("RSI", value=55.0, min_value=0.0, max_value=100.0)
+                atr = st.number_input("ATR", value=500.0, step=50.0)
+            
+            with col_f:
                 bb_upper = st.number_input("BB Upper", value=43000.0, step=100.0)
                 bb_middle = st.number_input("BB Middle", value=42000.0, step=100.0)
                 bb_lower = st.number_input("BB Lower", value=41000.0, step=100.0)
-                atr = st.number_input("ATR", value=500.0, step=50.0)
+                bb_width = st.number_input("BB Width", value=2000.0, step=100.0)
+                bb_position = st.number_input("BB Position", value=0.5, step=0.1)
+            
+            col_g, col_h = st.columns(2)
+            with col_g:
+                stoch_k = st.number_input("STOCH K", value=65.0, min_value=0.0, max_value=100.0)
+                stoch_d = st.number_input("STOCH D", value=60.0, min_value=0.0, max_value=100.0)
+                volume_ma_5 = st.number_input("Volume MA 5", value=100.0, step=10.0)
+                volume_ma_20 = st.number_input("Volume MA 20", value=95.0, step=10.0)
+                volume_ratio = st.number_input("Volume Ratio", value=1.05, step=0.05)
+            
+            with col_h:
+                high_low_ratio = st.number_input("HIGH/LOW Ratio", value=1.008, step=0.001)
+                close_open_ratio = st.number_input("CLOSE/OPEN Ratio", value=1.007, step=0.001)
+                hour = st.number_input("Hour (0-23)", value=12, min_value=0, max_value=23, step=1)
+                day_of_week = st.number_input("Day of Week (0-6)", value=3, min_value=0, max_value=6, step=1)
+                is_weekend = st.number_input("Is Weekend (0/1)", value=0, min_value=0, max_value=1, step=1)
             
             submitted = st.form_submit_button("🚀 Prédire", use_container_width=True)
         
         if submitted:
-            features = {
-                "open": open_price, "high": high_price, "low": low_price, "close": close_price,
-                "volume": volume, "rsi_14": rsi_14, "macd": macd, "macd_signal": macd_signal,
-                "bb_upper": bb_upper, "bb_middle": bb_middle, "bb_lower": bb_lower, "atr": atr,
-            }
+            # Construire la liste des 43 features dans le bon ordre
+            features_list = [
+                open_price, high_price, low_price, close_price, volume_btc, volume_usd,
+                returns_1h, returns_2h, returns_4h, returns_8h, returns_24h,
+                volatility_4h, volatility_8h, volatility_24h,
+                ma_5, ma_10, ma_20, ma_50,
+                ema_5, ema_10, ema_20,
+                momentum_5, momentum_10, momentum_20,
+                roc_5, roc_10,
+                rsi, atr,
+                bb_upper, bb_middle, bb_lower, bb_width, bb_position,
+                stoch_k, stoch_d,
+                volume_ma_5, volume_ma_20, volume_ratio,
+                high_low_ratio, close_open_ratio,
+                hour, day_of_week, is_weekend
+            ]
             
             try:
-                response = requests.post(f"{API_URL}/predict", json={"features": features}, timeout=10)
+                response = requests.post(f"{API_URL}/predict", json={"features": features_list}, timeout=10)
                 
                 if response.status_code == 200:
                     result = response.json()
                     st.success("Prédiction réussie!")
-                    prediction = result.get("prediction", 0)
-                    probability = result.get("probability", 0.5)
+                    direction = result.get("direction", "UNKNOWN")
+                    probability_up = result.get("probability_up", 0.5)
+                    confidence = result.get("confidence", 0.5)
                     
-                    if prediction == 1:
+                    if direction == "UP":
                         st.markdown('<p class="prediction-up">📈 HAUSSE PRÉVUE</p>', unsafe_allow_html=True)
                     else:
                         st.markdown('<p class="prediction-down">📉 BAISSE PRÉVUE</p>', unsafe_allow_html=True)
                     
-                    st.metric("Confiance", f"{probability*100:.1f}%")
+                    st.metric("Confiance", f"{confidence*100:.1f}%")
+                    st.metric("Probabilité Hausse", f"{probability_up*100:.1f}%")
                 else:
                     st.error(f"Erreur API: {response.status_code}")
                     
@@ -124,9 +190,9 @@ with tab1:
     
     with col2:
         st.subheader("📊 Indicateurs")
-        st.metric("RSI", f"{rsi_14:.1f}", delta="Neutre" if 30 < rsi_14 < 70 else "Extrême")
-        st.metric("MACD", f"{macd:.2f}", delta=f"{macd - macd_signal:.2f}")
-        st.metric("Volatilité (ATR)", f"${atr:.2f}")
+        st.metric("RSI", f"{rsi:.1f}", delta="Neutre" if 30 < rsi < 70 else "Extrême")
+        st.metric("ATR", f"${atr:.2f}")
+        st.metric("Volatilité 24h", f"{volatility_24h:.4f}")
 
 # ============================================
 # TAB 2: DATA ANALYSIS

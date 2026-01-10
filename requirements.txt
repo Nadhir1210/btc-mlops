@@ -6,3 +6,10 @@ uvicorn>=0.24.0
 streamlit>=1.28.0
 numpy>=1.24.0
 pydantic>=2.5.0
+dvc
+xgboost
+lightgbm
+catboost
+zenml
+matplotlib
+seaborn
