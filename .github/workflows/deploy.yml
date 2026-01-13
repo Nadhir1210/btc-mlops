@@ -18,7 +18,10 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: btc-mlops-api
-  AZURE_RESOURCE_GROUP: btc-mlops-rg
+  AZURE_RESOURCE_GROUP: btc-mlops-prod
+  AZURE_SUBSCRIPTION_ID: 44be7a71-c968-4817-a5da-a30e18af4c15
+  AZURE_LOCATION: switzerlandnorth
+  LOG_ANALYTICS_WORKSPACE: btcnadhir2026
   PYTHON_VERSION: "3.11"
 
 jobs:
