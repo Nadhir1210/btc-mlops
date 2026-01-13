@@ -168,7 +168,22 @@ print('✅ Sample data created')
         uses: actions/download-artifact@v4
         with:
           name: model-artifacts
-          path: .
+          path: ./artifacts
+        continue-on-error: true
+
+      - name: 📦 Copy artifacts to expected locations
+        run: |
+          mkdir -p src/training data/processed
+          if [ -f "./artifacts/catboost_model.pkl" ]; then
+            cp ./artifacts/catboost_model.pkl src/training/
+          fi
+          if [ -f "./artifacts/scaler.pkl" ]; then
+            cp ./artifacts/scaler.pkl data/processed/
+          fi
+          if [ -f "./artifacts/metrics.json" ]; then
+            cp ./artifacts/metrics.json data/processed/
+          fi
+          echo "✅ Artifacts prepared"
 
       - name: 🏷️ Generate tags
         id: meta
