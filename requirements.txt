@@ -13,3 +13,4 @@ catboost
 zenml
 matplotlib
 seaborn
+optuna

@@ -1,0 +1,9 @@
+# DVC Pipeline Parameters
+# These parameters are used across the pipeline stages
+
+# Data preparation parameters
+scale: true              # Enable feature scaling/normalization (StandardScaler)
+
+# Training parameters (Bayesian Optimization)
+n_calls: 10             # Number of Bayesian optimization iterations
+cv_folds: 3             # Number of cross-validation folds during training

@@ -1,0 +1,68 @@
+# DVC Pipeline Configuration for BTC-MLOps Project
+# This file defines the complete ML pipeline with data preparation,
+# model training, evaluation, and export stages.
+
+stages:
+  # Stage 1: Prepare and preprocess data
+  # Loads raw BTC data, engineers features (indicators), and splits into train/test sets
+  # Includes scaling and feature normalization
+  prepare:
+    cmd: python src/data/prepare_data.py
+    deps:
+      - data/raw/btc_hourly.csv
+      - src/data/prepare_data.py
+      - src/features/indicators.py
+    params:
+      - scale
+    outs:
+      - data/processed/X_train.pkl
+      - data/processed/X_test.pkl
+      - data/processed/y_train.pkl
+      - data/processed/y_test.pkl
+      - data/processed/scaler.pkl
+
+  # Stage 2: Train ensemble models with Bayesian Optimization
+  # Trains CatBoost, LightGBM, and XGBoost models using Bayesian optimization
+  # for hyperparameter tuning with cross-validation
+  train:
+    cmd: python src/training/train_bayesian_optimization.py
+    deps:
+      - data/processed/X_train.pkl
+      - data/processed/X_test.pkl
+      - data/processed/y_train.pkl
+      - data/processed/y_test.pkl
+      - src/training/train_bayesian_optimization.py
+    params:
+      - n_calls
+      - cv_folds
+    outs:
+      - src/training/catboost_best.pkl
+      - src/training/lightgbm_best.pkl
+      - src/training/xgboost_best.pkl
+
+  # Stage 3: Evaluate trained models
+  # Evaluates all trained models on test set and generates performance metrics
+  # Compares model performance and generates evaluation report
+  evaluate:
+    cmd: python src/evaluation/evaluate_models.py
+    deps:
+      - src/training/catboost_best.pkl
+      - src/training/lightgbm_best.pkl
+      - src/training/xgboost_best.pkl
+      - src/evaluation/evaluate_models.py
+    outs:
+      - evaluation_report.txt
+    metrics:
+      - src/training/metrics.json:
+          cache: false
+
+  # Stage 4: Export best model to MLflow Registry
+  # Logs the best performing model to MLflow model registry
+  # and tracks model metadata and parameters for production deployment
+  export:
+    cmd: python src/training/log_models_mlflow.py
+    deps:
+      - src/training/catboost_best.pkl
+      - src/training/metrics.json
+
+

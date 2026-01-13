@@ -1,0 +1,24 @@
+# Testing requirements for BTC-MLOps
+# Install with: pip install -r requirements-test.txt
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.0.0
+pytest-mock>=3.10.0
+
+# Data testing
+hypothesis>=6.70.0
+
+# Code quality
+pylint>=2.16.0
+flake8>=5.0.0
+black>=23.0.0
+isort>=5.12.0
+
+# Type checking
+mypy>=1.0.0
+
+# Documentation
+pytest-html>=3.2.0

@@ -108,29 +108,52 @@ async def load_model():
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         client = MlflowClient()
         
-        # Get latest version of registered model
-        versions = client.search_model_versions(f"name='{MODEL_NAME}'")
-        if versions:
-            latest_version = max(versions, key=lambda x: int(x.version))
-            model_uri = f"models:/{MODEL_NAME}/{latest_version.version}"
-            
-            model = mlflow.sklearn.load_model(model_uri)
-            
-            # Get run metrics
-            run = client.get_run(latest_version.run_id)
-            metrics = {k: round(v, 4) for k, v in run.data.metrics.items()}
-            
-            model_info = {
-                "source": "MLflow Model Registry",
-                "version": latest_version.version,
-                "run_id": latest_version.run_id,
-                "metrics": metrics
+        # Check if specific model URI is set via Env Var (Allows Rollback/Specific Version)
+        # Usage: set MLFLOW_MODEL_URI=models:/BTC_CatBoost_Production/1
+        specific_uri = os.getenv("MLFLOW_MODEL_URI")
+        
+        if specific_uri:
+             print(f"[INFO] Loading specific model from env var: {specific_uri}")
+             model_uri = specific_uri
+             # Try to parse version from URI for info (simplified) : models:/Name/Version
+             version_info = "env_var_defined"
+             run_id_info = "unknown"
+             
+             model = mlflow.sklearn.load_model(model_uri)
+             
+             model_info = {
+                "source": "Env Var Override",
+                "version": version_info,
+                "run_id": run_id_info,
+                "metrics": {}
             }
-            
-            print(f"[OK] Model loaded from MLflow Registry: {MODEL_NAME} v{latest_version.version}")
-            print(f"     Run ID: {latest_version.run_id}")
-            print(f"     Metrics: F1={metrics.get('f1_score', 'N/A')}, AUC={metrics.get('roc_auc', 'N/A')}")
-            return
+             
+        # Default: Get latest version of registered model
+        else:
+            versions = client.search_model_versions(f"name='{MODEL_NAME}'")
+            if versions:
+                latest_version = max(versions, key=lambda x: int(x.version))
+                model_uri = f"models:/{MODEL_NAME}/{latest_version.version}"
+                
+                model = mlflow.sklearn.load_model(model_uri)
+                
+                # Get run metrics
+                run = client.get_run(latest_version.run_id)
+                metrics = {k: round(v, 4) for k, v in run.data.metrics.items()}
+                
+                model_info = {
+                    "source": "MLflow Model Registry",
+                    "version": latest_version.version,
+                    "run_id": latest_version.run_id,
+                    "metrics": metrics
+                }
+                
+                print(f"[OK] Model loaded from MLflow Registry: {MODEL_NAME} v{latest_version.version}")
+                print(f"     Run ID: {latest_version.run_id}")
+                print(f"     Metrics: F1={metrics.get('f1_score', 'N/A')}, AUC={metrics.get('roc_auc', 'N/A')}")
+                return
+            else:
+                 print(f"[WARNING] No registered model found with name: {MODEL_NAME}")
             
     except Exception as e:
         print(f"[WARNING] Could not load from MLflow: {e}")
