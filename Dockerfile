@@ -20,11 +20,11 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 
 # Copy application code
 COPY api/ ./api/
-COPY training/prepare_data.py ./training/
-COPY training/catboost_best.pkl ./training/
-COPY training/scaler.pkl ./training/
-COPY training/mlflow.db ./training/
-COPY training/mlruns/ ./training/mlruns/
+COPY src/ ./src/
+COPY serving/ ./serving/
+
+# Copy model artifacts if they exist (use .dockerignore for control)
+COPY data/processed/ ./data/processed/
 
 # Port pour l'API FastAPI
 EXPOSE 8000
