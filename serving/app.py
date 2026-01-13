@@ -159,19 +159,31 @@ async def load_model():
         print(f"[WARNING] Could not load from MLflow: {e}")
     
     # Fallback to pickle file
-    try:
-        with open(MODEL_FALLBACK_PATH, 'rb') as f:
-            model = pickle.load(f)
-        model_info = {
-            "source": "Local pickle file",
-            "version": "local",
-            "run_id": None,
-            "metrics": {}
-        }
-        print(f"[OK] Model loaded from fallback: {MODEL_FALLBACK_PATH}")
-    except Exception as e:
-        print(f"[ERROR] Failed to load model: {e}")
-        model = None
+    fallback_paths = [
+        MODEL_FALLBACK_PATH,
+        os.path.join(TRAINING_PATH, 'catboost_model.pkl'),
+        'src/training/catboost_model.pkl',
+        'catboost_model.pkl'
+    ]
+    
+    for fallback_path in fallback_paths:
+        if os.path.exists(fallback_path):
+            try:
+                with open(fallback_path, 'rb') as f:
+                    model = pickle.load(f)
+                model_info = {
+                    "source": "Local pickle file",
+                    "version": "local",
+                    "run_id": None,
+                    "metrics": {}
+                }
+                print(f"[OK] Model loaded from fallback: {fallback_path}")
+                return
+            except Exception as e:
+                print(f"[WARNING] Failed to load from {fallback_path}: {e}")
+    
+    print(f"[ERROR] No model file found. API will run in degraded mode.")
+    model = None
 
 
 @app.get("/", tags=["Info"])
@@ -238,7 +250,10 @@ async def predict(input_data: PredictionInput):
     Returns prediction with probability and confidence
     """
     if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(
+            status_code=503, 
+            detail="Model not loaded. Please check model artifacts and restart the service."
+        )
     
     # Validate input
     if len(input_data.features) != 43:

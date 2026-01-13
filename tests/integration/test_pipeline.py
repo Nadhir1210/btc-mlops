@@ -23,8 +23,8 @@ class TestDataPipelineIntegration:
     
     def test_data_preparation_pipeline(self, raw_data_path):
         """Test complete data preparation pipeline"""
-        if not raw_data_path.exists():
-            pytest.skip("Raw data not found")
+        if not raw_data_path or not raw_data_path.exists():
+            pytest.skip("Raw data not found - skipping test")
         
         # Load and prepare data
         X, y, scaler = load_and_prepare_data(str(raw_data_path), scale=True)
@@ -39,8 +39,8 @@ class TestDataPipelineIntegration:
     
     def test_train_test_split(self, raw_data_path):
         """Test train/test split preserves data integrity"""
-        if not raw_data_path.exists():
-            pytest.skip("Raw data not found")
+        if not raw_data_path or not raw_data_path.exists():
+            pytest.skip("Raw data not found - skipping test")
         
         X, y, _ = load_and_prepare_data(str(raw_data_path), scale=True)
         
