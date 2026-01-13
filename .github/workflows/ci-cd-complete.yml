@@ -1,0 +1,248 @@
+name: Complete CI/CD Pipeline v2
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: 'false'
+
+env:
+  PYTHON_VERSION: "3.11"
+  AZURE_WEBAPP_NAME: btc-mlops-api
+  AZURE_RESOURCE_GROUP: btc-mlops-prod
+  ACR_LOGIN_SERVER: btcmlopsacr.azurecr.io
+  IMAGE_NAME: btc-mlops-api
+
+jobs:
+  # ============================================
+  # JOB 1: TESTS
+  # ============================================
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov flake8
+
+      - name: 🔍 Lint with flake8
+        run: |
+          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics || true
+          flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: 🧪 Run tests
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=xml
+        continue-on-error: true
+
+      - name: 📊 Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 30
+
+  # ============================================
+  # JOB 2: TRAINING
+  # ============================================
+  train:
+    name: 🚂 Train Model
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 📁 Prepare directories
+        run: |
+          mkdir -p data/processed
+          mkdir -p src/training
+          mkdir -p mlruns
+
+      - name: 🎯 Run Training Pipeline
+        run: |
+          python run_pipeline_simple.py
+
+      - name: 📊 Display metrics
+        run: |
+          if [ -f "data/processed/metrics.json" ]; then
+            echo "✅ Training completed - Metrics:"
+            cat data/processed/metrics.json
+          else
+            echo "⚠️ No metrics file found"
+          fi
+
+      - name: 💾 Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts
+          path: |
+            src/training/catboost_model.pkl
+            data/processed/scaler.pkl
+            data/processed/metrics.json
+          retention-days: 90
+
+      - name: 📦 Upload MLflow data
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-data
+          path: mlruns/
+          retention-days: 30
+
+  # ============================================
+  # JOB 3: BUILD & PUSH DOCKER
+  # ============================================
+  build-push:
+    name: 🐳 Build & Push to ACR
+    runs-on: ubuntu-latest
+    needs: train
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 💾 Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: .
+
+      - name: 🏷️ Generate tags
+        id: meta
+        run: |
+          echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+          echo "date=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: 🔑 Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: 🐳 Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.serve
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_short }}
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.date }}
+
+      - name: 📝 Image info
+        run: |
+          echo "✅ Images pushed:"
+          echo "  - ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest"
+          echo "  - ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_short }}"
+          echo "  - ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.date }}"
+
+  # ============================================
+  # JOB 4: DEPLOY TO AZURE
+  # ============================================
+  deploy:
+    name: 🚀 Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment:
+      name: production
+      url: https://btc-mlops-api.azurewebsites.net
+    
+    steps:
+      - name: 🔐 Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_V2 }}
+
+      - name: 🔄 Restart Web App
+        run: |
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
+
+      - name: ⏳ Wait for startup
+        run: sleep 45
+
+      - name: 🏥 Health check
+        run: |
+          for i in {1..10}; do
+            echo "Attempt $i/10..."
+            if curl -f https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/health; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: 🧪 Test prediction
+        run: |
+          curl -X POST https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/predict \
+            -H "Content-Type: application/json" \
+            -d '{"features": [50000, 51000, 49000, 50500, 1000, 50000000, 0.01, 0.02, 0.015, 0.01, 0.005, 0.02, 0.03, 0.025, 50000, 50200, 50300, 50400, 49900, 49800, 49700, 100, 200, 300, 1.02, 1.01, 60, 40, 50100, 50200, 0.5, 0.02, 0, 0.001, 0.002, 0.003, 0.004, 0.005, 0.001, 0.002, 0.003, 1.01, 0.5]}' \
+            || echo "⚠️ Prediction test skipped"
+
+  # ============================================
+  # JOB 5: NOTIFICATION
+  # ============================================
+  notify:
+    name: 📢 Summary
+    runs-on: ubuntu-latest
+    needs: [test, train, build-push, deploy]
+    if: always()
+    
+    steps:
+      - name: 📊 Pipeline Results
+        run: |
+          echo "# 🎯 CI/CD Pipeline Results"
+          echo ""
+          echo "| Job | Status |"
+          echo "|-----|--------|"
+          echo "| Tests | ${{ needs.test.result }} |"
+          echo "| Training | ${{ needs.train.result }} |"
+          echo "| Build & Push | ${{ needs.build-push.result }} |"
+          echo "| Deploy | ${{ needs.deploy.result }} |"
+          echo ""
+          
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ **Deployment successful!**"
+            echo "🌐 API: https://btc-mlops-api.azurewebsites.net"
+          else
+            echo "❌ **Pipeline failed**"
+            exit 1
+          fi

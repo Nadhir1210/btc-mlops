@@ -1,0 +1,94 @@
+name: Drift Detection & Monitoring
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Daily at 6 AM UTC
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  drift-check:
+    name: 📊 Data Drift Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔍 Run drift detection
+        id: drift
+        run: |
+          python monitoring/drift_check.py > drift_report.txt 2>&1 || true
+          cat drift_report.txt
+          
+          if grep -q "DRIFT_DETECTED" drift_report.txt; then
+            echo "drift_detected=true" >> $GITHUB_OUTPUT
+            echo "🚨 DRIFT DETECTED!"
+          else
+            echo "drift_detected=false" >> $GITHUB_OUTPUT
+            echo "✅ No drift detected"
+          fi
+
+      - name: 📤 Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report-${{ github.run_number }}
+          path: drift_report.txt
+          retention-days: 90
+
+      - name: 🚨 Create issue on drift
+        if: steps.drift.outputs.drift_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('drift_report.txt', 'utf8');
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Data Drift Detected - Action Required',
+              body: `## ⚠️ Data Drift Alert
+              
+              Drift was detected in the monitoring check on ${new Date().toISOString()}.
+              
+              ### 📋 Report
+              \`\`\`
+              ${report}
+              \`\`\`
+              
+              ### 🔄 Recommended Actions
+              - Review the drift patterns
+              - Check data quality
+              - Consider model retraining
+              - Update feature engineering if needed
+              
+              **Triggered by**: Automated drift detection (Run #${{ github.run_number }})`,
+              labels: ['drift', 'monitoring', 'automated']
+            });
+
+      - name: 🔄 Trigger retraining
+        if: steps.drift.outputs.drift_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci-cd-complete.yml',
+              ref: 'main'
+            });
+            console.log('✅ Retraining workflow triggered');
